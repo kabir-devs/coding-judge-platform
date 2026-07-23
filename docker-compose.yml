@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: judge
+      POSTGRES_USER: judge
+      POSTGRES_PASSWORD: judge_dev_password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://judge:judge_dev_password@postgres:5432/judge
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-dev_secret_change_me}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    # Mount the host Docker socket so the API/worker can launch sandbox
+    # containers as SIBLINGS of themselves (Docker-outside-of-Docker).
+    # This is the standard pattern for judge systems; the socket is only
+    # reachable by this trusted service, never by submitted user code.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  # One or more judge workers consuming the "submissions" Redis queue.
+  # Scale with: docker compose up --scale worker=4
+  worker:
+    build: ./backend
+    command: rq worker submissions --url redis://redis:6379/0
+    environment:
+      DATABASE_URL: postgresql://judge:judge_dev_password@postgres:5432/judge
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+      replicas: 2
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - api
+
+volumes:
+  pg_data:
