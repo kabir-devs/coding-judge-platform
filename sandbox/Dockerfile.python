@@ -1,1 +1,11 @@
+# Minimal, unprivileged Python execution sandbox.
+# Deliberately excludes pip, network tools, compilers, and any package
+# that would let submitted code reach outside its container.
+FROM python:3.12-alpine
+
+# Non-root user the judge container runs code as (see executor.py --user 1000:1000)
+RUN adduser -D -u 1000 sandbox
+USER sandbox
+
+WORKDIR /sandbox
 
